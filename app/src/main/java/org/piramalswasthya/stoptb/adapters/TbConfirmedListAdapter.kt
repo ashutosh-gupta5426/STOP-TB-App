@@ -111,6 +111,9 @@ ListAdapter<BenWithTbSuspectedDomain, TbConfirmedListAdapter.BenViewHolder>
 
             binding.btnCounselled.visibility =
                 if (isCounsellingOfficer && isCounselled) View.VISIBLE else View.GONE
+
+            binding.ivViewMember.visibility =
+                if(isCounsellingOfficer) View.VISIBLE else View.GONE
         }
 
     }
@@ -140,7 +143,8 @@ ListAdapter<BenWithTbSuspectedDomain, TbConfirmedListAdapter.BenViewHolder>
     class ClickListener(
         private val clickedForm: ((hhId: Long, benId: Long) -> Unit)? = null,
         private val clickedCounselling: ((item: BenWithTbSuspectedDomain) -> Unit)? = null,
-        private val clickedCounselled: ((item: BenWithTbSuspectedDomain) -> Unit)? = null
+        private val clickedCounselled: ((item: BenWithTbSuspectedDomain) -> Unit)? = null,
+        private val clickedViewMember : ((item : BenWithTbSuspectedDomain) -> Unit)? = null
     ) {
         fun onClickForm(item: BenWithTbSuspectedDomain) =
             clickedForm?.let { it(item.ben.hhId, item.ben.benId) }
@@ -148,6 +152,8 @@ ListAdapter<BenWithTbSuspectedDomain, TbConfirmedListAdapter.BenViewHolder>
             clickedCounselling?.let { it(item) }
         fun onClickCounselled(item: BenWithTbSuspectedDomain) =
             clickedCounselled?.let { it(item) }
+        fun onClickViewMember(item : BenWithTbSuspectedDomain) =
+            clickedViewMember?.let { it(item) }
     }
     fun submitBenIds(list: List<Long>?) {
         if (list != null) {
