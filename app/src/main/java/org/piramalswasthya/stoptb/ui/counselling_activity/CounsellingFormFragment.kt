@@ -40,9 +40,10 @@ class   CounsellingFormFragment : Fragment() {
         rv.adapter = adapter
 
         fun refreshAdapter() {
+            val section = viewModel.schemaData?.sections?.getOrNull(viewModel.currentStep.value ?: 0)
             adapter.submitList(
                 viewModel.activeQuestions.value.orEmpty(),
-                viewModel.isFormEditable.value ?: true
+                viewModel.isSectionEditable(section)
             )
         }
         viewModel.activeQuestions.observe(viewLifecycleOwner) { refreshAdapter() }

@@ -53,6 +53,27 @@ class CounsellingViewModel @Inject constructor(
     private val _isFormEditable = MutableLiveData<Boolean>(true)
     val isFormEditable: LiveData<Boolean> get() = _isFormEditable
 
+    // Additive override on top of _isFormEditable: a section the backend flags isEditable=true
+    // stays editable even when the form overall is read-only (e.g. already completed).
+    fun isSectionEditable(section: CounsellingSectionDto?): Boolean {
+        return _isFormEditable.value != false || section?.isEditable == true
+    }
+
+    // Defaults ON: this Activity is only ever reached via the confirmed-list's
+    // Start Counselling / Counselled buttons, so "ON when arriving via that button" is
+    // satisfied by an unconditional default rather than a per-launch signal.
+    private val _isGeneralInfoToggleOn = MutableLiveData(true)
+    val isGeneralInfoToggleOn: LiveData<Boolean> get() = _isGeneralInfoToggleOn
+
+    private var generalInfoSection: CounsellingSectionDto? = null
+    private var generalInfoFormId: Int = 2
+    private var generalInfoFormVersionNumber: Int = 1
+    private val _generalInfoQuestions = MutableLiveData<List<CounsellingQuestionDto>>(emptyList())
+    val generalInfoQuestions: LiveData<List<CounsellingQuestionDto>> get() = _generalInfoQuestions
+
+    private val _generalInfoRefusalSubmitted = MutableLiveData<Boolean>()
+    val generalInfoRefusalSubmitted: LiveData<Boolean> get() = _generalInfoRefusalSubmitted
+
     enum class CounsellingEntryMode {
         COUNSELLING,
         FOLLOW_UP
@@ -66,12 +87,60 @@ class CounsellingViewModel @Inject constructor(
 
     init {
         loadOverview()
+        loadGeneralInfoSection()
     }
 
     fun loadOverview() {
         viewModelScope.launch {
             _overview.value = NetworkResponse.Loading()
             _overview.value = counsellingRepo.getCounsellingOverview(benId)
+        }
+    }
+
+    fun loadGeneralInfoSection() {
+        viewModelScope.launch {
+            val response = counsellingRepo.getFormSchema(benId, SectionPhase.GENERAL_INFO)
+            val schemaDto = response.data
+            if (response is NetworkResponse.Success && schemaDto != null) {
+                generalInfoFormId = schemaDto.formId
+                generalInfoFormVersionNumber = schemaDto.versionNumber
+                val section = schemaDto.sections.firstOrNull()
+                generalInfoSection = section
+                section?.questions?.forEach { q -> q.visible = q.visibleByDefault }
+                section?.let { evaluateAllConditions(it) }
+                _generalInfoQuestions.value = section?.questions?.toList().orEmpty()
+            } else {
+                generalInfoSection = null
+                _generalInfoQuestions.value = emptyList()
+            }
+        }
+    }
+
+    fun setGeneralInfoToggle(checked: Boolean) {
+        _isGeneralInfoToggleOn.value = checked
+    }
+
+    fun evaluateGeneralInfoConditions(q: CounsellingQuestionDto) {
+        val section = generalInfoSection ?: return
+        evaluateAllConditions(section)
+        _generalInfoQuestions.value = section.questions.toList()
+    }
+
+    fun submitGeneralInfoRefusal() {
+        val section = generalInfoSection ?: return
+        if (!validateSection(section)) {
+            _generalInfoQuestions.value = section.questions.toList()
+            return
+        }
+        viewModelScope.launch {
+            val success = counsellingRepo.submitGeneralInfoAnswers(
+                benId, generalInfoFormId, section, generalInfoFormVersionNumber
+            )
+            if (success) {
+                _generalInfoRefusalSubmitted.value = true
+            } else {
+                _saveError.value = "Failed to submit. Please try again."
+            }
         }
     }
 
@@ -386,13 +455,16 @@ class CounsellingViewModel @Inject constructor(
         return qError
     }
 
-    fun validateCurrentSection(): Boolean {
-        val activeSection = schemaData?.sections?.getOrNull(_currentStep.value ?: 0) ?: return true
-        if (disabledValidationSections.contains(activeSection.sectionUuid)) return true
+    // Shared by validateCurrentSection() (stepped PRE_SUBMIT/POST_SUBMIT flow) and
+    // submitGeneralInfoRefusal() (GENERAL_INFO gate) — validates every visible question in
+    // the given section, setting/clearing errorMessage on each. Caller re-publishes whichever
+    // LiveData backs that section's rendering.
+    private fun validateSection(section: CounsellingSectionDto): Boolean {
+        if (disabledValidationSections.contains(section.sectionUuid)) return true
 
         var isValid = true
-        for (q in activeSection.questions.filter { it.visible }) {
-            val qError = validateQuestion(q, activeSection)
+        for (q in section.questions.filter { it.visible }) {
+            val qError = validateQuestion(q, section)
             if (qError != null) {
                 q.errorMessage = qError
                 isValid = false
@@ -400,7 +472,12 @@ class CounsellingViewModel @Inject constructor(
                 q.errorMessage = null
             }
         }
+        return isValid
+    }
 
+    fun validateCurrentSection(): Boolean {
+        val activeSection = schemaData?.sections?.getOrNull(_currentStep.value ?: 0) ?: return true
+        val isValid = validateSection(activeSection)
         if (!isValid) {
             _activeQuestions.value = activeSection.questions.toList()
         }
@@ -414,7 +491,7 @@ class CounsellingViewModel @Inject constructor(
         val formId = schemaData?.formId ?: 2
         val versionNumber = schemaData?.versionNumber ?: 1
 
-        if (_isFormEditable.value == false) {
+        if (!isSectionEditable(section)) {
             if (current < (schemaData?.sections?.size ?: 1) - 1) {
                 loadSection(current + 1)
             } else {
@@ -440,12 +517,13 @@ class CounsellingViewModel @Inject constructor(
     fun previousSection() {
         val current = _currentStep.value ?: 0
         if (current > 0) {
+            val section = schemaData?.sections?.getOrNull(current) ?: return
+
             // In read-only mode skip the save and navigate directly.
-            if (_isFormEditable.value == false) {
+            if (!isSectionEditable(section)) {
                 loadSection(current - 1)
                 return
             }
-            val section = schemaData?.sections?.getOrNull(current) ?: return
             val formId = schemaData?.formId ?: 2
             val versionNumber = schemaData?.versionNumber ?: 1
             val previousSectionId = schemaData?.sections?.getOrNull(current - 1)?.sectionId

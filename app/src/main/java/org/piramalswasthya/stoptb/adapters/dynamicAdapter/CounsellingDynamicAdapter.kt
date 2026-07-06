@@ -49,7 +49,7 @@ class CounsellingDynamicAdapter(
     override fun getItemViewType(position: Int): Int = when (visibleQuestions[position].questionType) {
         "TEXT" -> TYPE_TEXT
         "RADIO" -> TYPE_RADIO
-        "MCQ" -> TYPE_MCQ
+        "MCQ", "CHECKBOX" -> TYPE_MCQ
         "DATE" -> TYPE_DATE
         else -> TYPE_TEXT
     }

@@ -372,7 +372,7 @@
 
     <string name="save_successful">Save Successful</string>
     <string name="otp_resent">OTP Resent</string>
-    <string name="something_wend_wong_contact_testing">Something wend wong! Contact testing!</string>
+    <string name="something_wend_wong_contact_testing">Something went wrong.</string>
     <string name="error_input">Error Input</string>
     <string name="exit_application">Exit Application</string>
     <string name="do_you_want_to_exit_application">Do you want to exit application</string>
@@ -387,6 +387,7 @@
     <string name="child_immunization">Child Immunization</string>
     <string name="relation_with_hof">Relation with HOF</string>
     <string name="add_family_member">Add Family Member</string>
+    <string name="add_household_member">Add HoF Member</string>
     <string name="app_native_name">StopTB</string>
     <string name="non_pregnant_women_eligible_couple_section">Non-Pregnant Women (Eligible Couple) section</string>
     <string name="time_of_death">Time of Death</string>
@@ -922,6 +923,9 @@
     <string name="tb_referral_required">Referral Required</string>
     <string name="tb_referral_for">Referral For</string>
     <string name="tb_family_contact_screening_alert">Advise tracing and screening of all family members</string>
+    <string name="tb_presumptive_alert_title">A Presumptive TB case!</string>
+    <string name="tb_presumptive_alert_refer">Refer to X-ray and collect sputum for Truenat test</string>
+    <string name="tb_presumptive_alert_family">Advise screening of all family members</string>
     <string name="referred_for_digital_chest_xray">Referred for digital chest x-ray</string>
     <string name="referred_for_sputum_collection">Referred for Sputum Collection</string>
     <string name="recommended_for_truenat_test">Recommended for Truenat test</string>
@@ -1217,6 +1221,7 @@
     <string name="btn_examine_count">Examine %1$d/5</string>
     <string name="btn_examine_count_of">Examine %1$d/%2$d</string>
     <string name="examine_bottomsheet_title">Examination Forms</string>
+    <string name="examine_btn_loading">Loading...</string>
     <string name="examine_btn_fill">Fill</string>
     <string name="examine_btn_view">View</string>
     <string name="diagnosis_locked_msg">Please fill TB Screening form first</string>
@@ -1343,6 +1348,7 @@
     <string name="patient_registered_successfully">Patient Registered Successfully</string>
     <string name="proceed_to_register_hof">Do you want to proceed with registration of Head of the Family?</string>
     <string name="not_filled" translatable="false">Not Filled</string>
+    <string name="counselling_consent">Counselling Consent</string>
 
 </resources>
 

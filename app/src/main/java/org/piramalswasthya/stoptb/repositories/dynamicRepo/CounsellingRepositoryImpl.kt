@@ -40,6 +40,20 @@ class CounsellingRepositoryImpl @Inject constructor(
 
     override suspend fun downloadAndStoreAllForms(): Boolean {
         return try {
+            /* ===== TEMPORARY FOR LOCAL TESTING (backend V2 getAllForms not deployed yet) =====
+               Delete this whole TEMPORARY block and uncomment the ORIGINAL block below
+               (further down in this function) once backend V2 is deployed. */
+            val type = object : com.google.gson.reflect.TypeToken<
+                    org.piramalswasthya.stoptb.model.dynamicModel.ApiResponse<List<FormSchemaDto>>>() {}.type
+            val apiSchemas: List<FormSchemaDto> = com.google.gson.Gson().fromJson<
+                    org.piramalswasthya.stoptb.model.dynamicModel.ApiResponse<List<FormSchemaDto>>>(
+                org.piramalswasthya.stoptb.ui.counselling_activity.COUNSELLING_JSON(),
+                type
+            ).data ?: return false
+            /* ===== END TEMPORARY BLOCK ===== */
+
+            /* ===== ORIGINAL (real API call) — uncomment this block and delete the TEMPORARY
+                     block above once backend V2 is deployed:
             val jwt = preferenceDao.getJWTAmritToken()
             val authHeader = jwt ?: run {
                 Timber.w("downloadAndStoreAllForms: JWT token is null, API call will likely fail")
@@ -68,6 +82,25 @@ class CounsellingRepositoryImpl @Inject constructor(
             } else {
                 false
             }
+            ===== END ORIGINAL ===== */
+
+            db.withTransaction {
+                val nullQuestions = metadataDao.getQuestionsWithNullServerIdCount()
+                val nullOptions = metadataDao.getOptionsWithNullServerIdCount()
+                val forceRefresh = nullQuestions > 0 || nullOptions > 0
+                if (forceRefresh) {
+                    Timber.d("downloadAndStoreAllForms: Detected null server ID columns in metadata database. Forcing schema updates.")
+                }
+
+                apiSchemas.forEach { apiSchema ->
+                    val formId = apiSchema.formId.toIntOrNull() ?: 0
+                    val activeVersion = metadataDao.getActiveVersionNumber(formId)
+                    if (activeVersion == null || apiSchema.versionNumber > activeVersion || forceRefresh) {
+                        storeFormSchemaInDb(apiSchema)
+                    }
+                }
+            }
+            true
         } catch (e: Exception) {
             Timber.e(e, "downloadAndStoreAllForms failed")
             false
@@ -124,7 +157,8 @@ class CounsellingRepositoryImpl @Inject constructor(
                 sectionNameHindi = sectionDto.sectionNameHindi,
                 sectionOrder = sectionDto.displayOrder ?: 0,
                 sectionPhase = sectionDto.sectionPhase ?: "",
-                sectionUuid = sectionDto.sectionUuid
+                sectionUuid = sectionDto.sectionUuid,
+                isEditable = sectionDto.isEditable
             )
             sectionsToInsert.add(sectionEntity)
 
@@ -279,12 +313,13 @@ class CounsellingRepositoryImpl @Inject constructor(
             val activeVersion = formDef.versions.find { it.version.versionId == formVersionId }
                 ?: return@withTransaction
 
-            val sectionDef = if (phase == "PRE_SUBMIT") {
-                activeVersion.sections
+            val sectionDef = when (phase) {
+                "PRE_SUBMIT" -> activeVersion.sections
                     .filter { it.section.sectionPhase == "PRE_SUBMIT" }
                     .maxByOrNull { it.section.sectionOrder }
-            } else {
-                activeVersion.sections
+                "GENERAL_INFO" -> activeVersion.sections
+                    .find { it.section.sectionPhase == "GENERAL_INFO" }
+                else -> activeVersion.sections
                     .find { it.section.sectionPhase == "POST_SUBMIT" }
             } ?: activeVersion.sections.maxByOrNull { it.section.sectionOrder }
               ?: return@withTransaction
@@ -314,6 +349,10 @@ class CounsellingRepositoryImpl @Inject constructor(
 
     override suspend fun submitSectionF(responseId: Long, answers: List<QuestionResponseEntity>) {
         submitSectionWithPhase(responseId, answers, "POST_SUBMIT", "COMPLETED")
+    }
+
+    override suspend fun submitSectionGeneralInfo(responseId: Long, answers: List<QuestionResponseEntity>) {
+        submitSectionWithPhase(responseId, answers, "GENERAL_INFO", "REFUSED")
     }
 
     override suspend fun getCounsellingRecord(beneficiaryId: Long): Flow<CompleteFormResponse?> {
@@ -493,7 +532,7 @@ class CounsellingRepositoryImpl @Inject constructor(
                 return true
             }
 
-            val formDef = metadataDao.getFormDefinition(FormType.TB_COUNSELLING) ?: return false
+            val formDef = metadataDao.getFormDefinition(FormType.TB_COUNSELLING_V2) ?: return false
             val activeVersion = formDef.versions.find { it.version.isActive }
                 ?: formDef.versions.maxByOrNull { it.version.versionNumber }
                 ?: return false
@@ -640,14 +679,14 @@ class CounsellingRepositoryImpl @Inject constructor(
                 Timber.w("fetchAndStoreCompletedBeneficiaries: JWT token is null")
                 return null
             }
-            val response = amritApiService.getCompletedBeneficiaries(authHeader, "TB_COUNSELLING")
+            val response = amritApiService.getCompletedBeneficiaries(authHeader, FormType.TB_COUNSELLING_V2.name)
             if (response.isSuccessful) {
                 val completedIds = response.body()?.data as? List<Long> ?: return null
 
-                var formDef = metadataDao.getFormDefinition(FormType.TB_COUNSELLING)
+                var formDef = metadataDao.getFormDefinition(FormType.TB_COUNSELLING_V2)
                 if (formDef == null) {
                     downloadAndStoreAllForms()
-                    formDef = metadataDao.getFormDefinition(FormType.TB_COUNSELLING)
+                    formDef = metadataDao.getFormDefinition(FormType.TB_COUNSELLING_V2)
                 }
                 val activeVersion = formDef?.versions?.find { it.version.isActive }
                     ?: formDef?.versions?.maxByOrNull { it.version.versionNumber }

@@ -10,12 +10,14 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
+import androidx.recyclerview.widget.LinearLayoutManager
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
 import org.piramalswasthya.stoptb.R
+import org.piramalswasthya.stoptb.adapters.dynamicAdapter.CounsellingDynamicAdapter
 import org.piramalswasthya.stoptb.database.shared_preferences.PreferenceDao
 import org.piramalswasthya.stoptb.databinding.ActivityCounsellingBinding
 import org.piramalswasthya.stoptb.helpers.MyContextWrapper
@@ -47,6 +49,7 @@ class CounsellingActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityCounsellingBinding
     private val viewModel: CounsellingViewModel by viewModels()
+    private lateinit var generalInfoAdapter: CounsellingDynamicAdapter
 
     // Progress bar stays visible until overview has loaded.
     private var isOverviewReady = false
@@ -69,6 +72,7 @@ class CounsellingActivity : AppCompatActivity() {
             setDisplayHomeAsUpEnabled(true)
             title = getString(R.string.counselling_overview_title)
         }
+        setupGeneralInfoSection()
         setupNavigationFooter()
         observeViewModel()
 
@@ -88,6 +92,61 @@ class CounsellingActivity : AppCompatActivity() {
                 }
             }
         })
+    }
+
+    private fun setupGeneralInfoSection() {
+        generalInfoAdapter = CounsellingDynamicAdapter(
+            questions = emptyList(),
+            onValueChanged = { updatedQ -> viewModel.evaluateGeneralInfoConditions(updatedQ) }
+        )
+        binding.rvGeneralInfo.layoutManager = LinearLayoutManager(this)
+        binding.rvGeneralInfo.adapter = generalInfoAdapter
+
+        binding.ConsentToggleButton.setOnCheckedChangeListener { _, checked ->
+            viewModel.setGeneralInfoToggle(checked)
+        }
+    }
+
+    // Overlay on top of setupNavigationFooter(): consent questions/answers come from a
+    // backend-authored GENERAL_INFO section; if it's empty (not deployed yet), this is a
+    // no-op and setupNavigationFooter()'s default state stands unchanged.
+    private fun updateGeneralInfoUi() {
+        val questions = viewModel.generalInfoQuestions.value.orEmpty()
+        val toggleOn = viewModel.isGeneralInfoToggleOn.value ?: true
+
+        if (questions.isEmpty()) {
+            binding.rvGeneralInfo.visibility = View.GONE
+            return
+        }
+
+        generalInfoAdapter.submitList(questions, true)
+        binding.rvGeneralInfo.visibility = if (toggleOn) View.VISIBLE else View.GONE
+
+        // Per the real getAllForms response, the consent question's options are
+        // optionValue "YES" (agreed) / "NO" (refused) — not "COMPLETED"/"REFUSAL".
+        val consentAnswer = questions.firstOrNull { it.questionType == "RADIO" }?.value as? String
+
+        binding.navigationFooter.root.visibility = View.VISIBLE
+        binding.navigationFooter.btnBack.visibility = View.GONE
+        when {
+            consentAnswer?.equals("NO", ignoreCase = true) == true -> {
+                binding.navigationFooter.btnNext.text = getString(R.string.btn_submit)
+                binding.navigationFooter.btnNext.visibility = View.VISIBLE
+                binding.navigationFooter.btnNext.setOnClickListener {
+                    viewModel.submitGeneralInfoRefusal()
+                }
+            }
+            consentAnswer?.equals("YES", ignoreCase = true) == true -> {
+                binding.navigationFooter.btnNext.text = getString(R.string.counselling_start_button)
+                binding.navigationFooter.btnNext.visibility = View.VISIBLE
+                binding.navigationFooter.btnNext.setOnClickListener {
+                    viewModel.startCounselling()
+                }
+            }
+            else -> {
+                binding.navigationFooter.btnNext.visibility = View.GONE
+            }
+        }
     }
 
     private fun setupNavigationFooter() {
@@ -170,6 +229,7 @@ class CounsellingActivity : AppCompatActivity() {
                         isOverviewReady = true
                         maybeShowContent()
                         setupNavigationFooter()
+                        updateGeneralInfoUi()
                     }
                 }
                 is NetworkResponse.Error -> {
@@ -216,7 +276,7 @@ class CounsellingActivity : AppCompatActivity() {
 
             val section = viewModel.schemaData?.sections?.getOrNull(step)
             val total = viewModel.schemaData?.sections?.size ?: 1
-            val isEditable = viewModel.isFormEditable.value ?: true
+            val isEditable = viewModel.isSectionEditable(section)
 
             binding.navigationFooter.btnNext.text = when {
                 step == total - 1 && isEditable -> getString(R.string.btn_submit)
@@ -237,6 +297,12 @@ class CounsellingActivity : AppCompatActivity() {
                 Toast.makeText(this, errorMsg, Toast.LENGTH_SHORT).show()
                 viewModel.resetSaveError()
             }
+        }
+
+        viewModel.generalInfoQuestions.observe(this) { updateGeneralInfoUi() }
+        viewModel.isGeneralInfoToggleOn.observe(this) { updateGeneralInfoUi() }
+        viewModel.generalInfoRefusalSubmitted.observe(this) { submitted ->
+            if (submitted == true) finish()
         }
     }
 
@@ -290,6 +356,7 @@ class CounsellingActivity : AppCompatActivity() {
         binding.llCounsellingInfo.visibility = View.VISIBLE
         supportActionBar?.title = getString(R.string.counselling_overview_title)
         setupNavigationFooter()
+        updateGeneralInfoUi()
     }
 
     private fun hideKeyboard() {
